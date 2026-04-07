@@ -1,0 +1,2 @@
+class ResponseBuilder:
+    pass
