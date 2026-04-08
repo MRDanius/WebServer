@@ -7,8 +7,8 @@ class OwnFormatter(logging.Formatter):
         return message.replace('\r\n', ' | ').replace('\n', ' | ').replace('\r', ' | ')
 
 
-def configure_logger():
-    handler = logging.FileHandler('server.log', encoding='utf-8')
+def configure_logger(log_file):
+    handler = logging.FileHandler(log_file, encoding='utf-8')
     handler.setFormatter(OwnFormatter(
         '%(asctime)s - %(name)s:%(lineno)d - %(levelname)s - %(message)s',
         datefmt='%Y-%m-%d %H:%M:%S',
