@@ -18,12 +18,12 @@ class Config:
             with open(file_path, 'r', encoding='utf-8') as config:
                 data = json.load(config)
 
-            self.host = data['host_ip']
-            self.port = data['port']
-            self.root_dir = data['root_dir']
-            self.log_file = data['log_file']
-            self.ssl_cert = data['ssl_cert']
-            self.ssl_key = data['ssl_key']
+            self.host = data.get('host_ip', self.host)
+            self.port = data.get('port', self.port)
+            self.root_dir = data.get('root_dir', self.root_dir)
+            self.log_file = data.get('log_file', self.log_file)
+            self.ssl_cert = data.get('ssl_cert', self.ssl_cert)
+            self.ssl_key = data.get('ssl_key', self.ssl_key)
 
             print("OK! Конфиг успешно загружен из файла")
         except FileNotFoundError:
