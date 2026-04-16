@@ -31,7 +31,7 @@ class FileManager:
         if mime_type is None:
             mime_type = 'application/octet-stream'
 
-        logger.debug(f"Успешно прочитан файл: {full_path}")
+        logger.info(f"Успешно прочитан файл: {full_path}")
         return content, mime_type
 
 
