@@ -3,9 +3,9 @@ import socket
 import ssl
 import threading
 
-from server.core.handler import Handler
-from server.protocol.parser import Parser
-from server.utils.file_manager import FileManager
+from WebServer.server.core.handler import Handler
+from WebServer.server.protocol.parser import Parser
+from WebServer.server.utils.file_manager import FileManager
 
 
 log = logging.getLogger(__name__)
@@ -62,7 +62,12 @@ class Server:
 
     def _process_client(self, client_socket, client_ip):
         try:
-            raw_request = client_socket.recv(4096)
+            raw_request = b""
+            while b"\r\n\r\n" not in raw_request:
+                chunk = client_socket.recv(4096)
+                if not chunk:
+                    break
+                raw_request += chunk
             if not raw_request:
                 return
             try:
