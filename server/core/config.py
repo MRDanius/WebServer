@@ -25,10 +25,10 @@ class Config:
             self.ssl_cert = data.get('ssl_cert', self.ssl_cert)
             self.ssl_key = data.get('ssl_key', self.ssl_key)
 
-            print("OK! Конфиг успешно загружен из файла")
+            log.info("Конфиг успешно загружен из файла")
         except FileNotFoundError:
-            print(f"[ERROR]: Файл не конфигурации не найден, будут использованы значения по умолчанию ")
+            log.warning("Файл конфигурации не найден, будут использованы значения по умолчанию")
         except json.JSONDecodeError:
-            print(f"[ERROR]: Ошибка в файле конфигурации, проверьте JSON, будут использованы значения по умолчанию")
+            log.error("Ошибка в файле конфигурации, проверьте синтаксис JSON. Будут использованы значения по умолчанию")
         except Exception as e:
-            print(f"[ERROR]: Непредвиденная ошибка! {e}")
+            log.error(f"Непредвиденная ошибка при загрузке конфига: {e}", exc_info=True)
