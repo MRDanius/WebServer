@@ -1,9 +1,9 @@
 import json
 import logging
 
-from WebServer.server.core.config import Config
-from WebServer.server.core.server import Server
-from WebServer.server.utils.logger import configure_logger
+from server.core.config import Config
+from server.core.server import Server
+from server.utils.logger import configure_logger
 
 
 def get_log_filename(file_path='config.json', default_name='webserver.log'):

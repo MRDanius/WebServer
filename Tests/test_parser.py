@@ -1,9 +1,12 @@
 import unittest
 
-from server.parser import parse_request
+from server.protocol.parser import Parser
 
 
 class ParseRequestTests(unittest.TestCase):
+    def setUp(self):
+        self.parser = Parser()
+
     def test_parse_valid_get_request(self):
         request = (
             b"GET /index.html HTTP/1.1\r\n"
@@ -12,7 +15,7 @@ class ParseRequestTests(unittest.TestCase):
             b"\r\n"
         )
 
-        result = parse_request(request)
+        result = self.parser.parse_request(request)
 
         self.assertEqual(result["operation"], "GET")
         self.assertEqual(result["path"], "/index.html")
@@ -27,7 +30,7 @@ class ParseRequestTests(unittest.TestCase):
             b"\r\n"
         )
 
-        result = parse_request(request)
+        result = self.parser.parse_request(request)
 
         self.assertEqual(result["operation"], "HEAD")
         self.assertEqual(result["path"], "/")
@@ -36,7 +39,7 @@ class ParseRequestTests(unittest.TestCase):
 
     def test_empty_request(self):
         with self.assertRaises(ValueError) as error:
-            parse_request(b"")
+            self.parser.parse_request(b"")
 
         self.assertEqual(str(error.exception), "Request is empty")
 
@@ -44,7 +47,7 @@ class ParseRequestTests(unittest.TestCase):
         request = b"GET / HTTP/1.1\r\nHost: localhost:8080\r\n"
 
         with self.assertRaises(ValueError) as error:
-            parse_request(request)
+            self.parser.parse_request(request)
 
         self.assertEqual(str(error.exception), "Request is incomplete")
 
@@ -52,7 +55,7 @@ class ParseRequestTests(unittest.TestCase):
         request = b"GET /index.html\r\nHost: localhost:8080\r\n\r\n"
 
         with self.assertRaises(ValueError) as error:
-            parse_request(request)
+            self.parser.parse_request(request)
 
         self.assertEqual(str(error.exception), "Invalid request line")
 
@@ -60,7 +63,7 @@ class ParseRequestTests(unittest.TestCase):
         request = b"POST /index.html HTTP/1.1\r\nHost: localhost:8080\r\n\r\n"
 
         with self.assertRaises(ValueError) as error:
-            parse_request(request)
+            self.parser.parse_request(request)
 
         self.assertEqual(str(error.exception), "Invalid request method")
 
@@ -68,7 +71,7 @@ class ParseRequestTests(unittest.TestCase):
         request = b"GET index.html HTTP/1.1\r\nHost: localhost:8080\r\n\r\n"
 
         with self.assertRaises(ValueError) as error:
-            parse_request(request)
+            self.parser.parse_request(request)
 
         self.assertEqual(str(error.exception), "Path is empty")
 
@@ -76,7 +79,7 @@ class ParseRequestTests(unittest.TestCase):
         request = b"GET /index.html HTTP/2.0\r\nHost: localhost:8080\r\n\r\n"
 
         with self.assertRaises(ValueError) as error:
-            parse_request(request)
+            self.parser.parse_request(request)
 
         self.assertEqual(str(error.exception), "Invalid request version")
 

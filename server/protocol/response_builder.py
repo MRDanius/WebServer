@@ -12,19 +12,25 @@ class ResponseBuilder:
         500: "Internal Server Error",
     }
 
-    def build_response(self, status, content, content_type, method):
-
+    def build_headers(self, status, file_size, content_type, method):
         answer_line = f"HTTP/1.1 {status} {self.get_status(status)}\r\n"
 
         headers = [
-            f"Content-Length: {len(content)}",
+            f"Content-Length: {file_size}",
             f"Content-Type: {content_type}",
             "Connection: close",
         ]
 
         header_part = "\r\n".join(headers) + "\r\n\r\n"
-        response = answer_line + header_part
-        response_bytes = response.encode("utf-8")
+        return (answer_line + header_part).encode("utf-8")
+
+    def build_response(self, status, content, content_type, method):
+        response_bytes = self.build_headers(
+            status=status,
+            file_size=len(content),
+            content_type=content_type,
+            method=method,
+        )
 
         if method == "HEAD":
             return response_bytes

@@ -3,9 +3,9 @@ import socket
 import ssl
 import threading
 
-from WebServer.server.utils.file_manager import FileManager
-from WebServer.server.core.server import Handler
-from WebServer.server.core.server import parse_request
+from server.core.handler import Handler
+from server.protocol.parser import Parser
+from server.utils.file_manager import FileManager
 
 
 log = logging.getLogger(__name__)
@@ -18,6 +18,7 @@ class Server:
 
         self.file_manager = FileManager(self.config.root_dir)
         self.handler = Handler(self.file_manager)
+        self.parser = Parser()
 
     def start(self):
         self.run_flag = True
@@ -65,7 +66,7 @@ class Server:
             if not raw_request:
                 return
             try:
-                params = parse_request(raw_request)
+                params = self.parser.parse_request(raw_request)
                 headers, content_generator = self.handler.handle_request(
                     method=params.get("operation"),
                     path=params.get("path"),

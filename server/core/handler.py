@@ -1,6 +1,6 @@
 import logging
 
-from server.response_builder import ResponseBuilder
+from server.protocol.response_builder import ResponseBuilder
 
 
 log = logging.getLogger(__name__)
@@ -54,17 +54,20 @@ class Handler:
 
     def handle_file_request(self, method, path, client_ip):
         try:
-            content, content_type = self.file_service.get_file(path)
+            content_generator, file_size, content_type = self.file_service.get_file(path)
 
-            response = self.response_builder.build_response(
+            headers = self.response_builder.build_headers(
                 status=200,
-                content=content,
+                file_size=file_size,
                 content_type=content_type,
                 method=method,
             )
 
             log.info("ACCESS %s %s %s %s", client_ip, method, path, 200)
-            return response
+            if method == "HEAD":
+                return headers, None
+
+            return headers, content_generator
 
         except FileNotFoundError:
             return self.build_error_response(
@@ -99,7 +102,7 @@ class Handler:
         status_text = self.response_builder.get_status(status)
         content = f"<h1>{status} {status_text}</h1>".encode("utf-8")
 
-        response = self.response_builder.build_response(
+        response_bytes = self.response_builder.build_response(
             status=status,
             content=content,
             content_type=self.ERROR_CONTENT_TYPE,
@@ -107,4 +110,4 @@ class Handler:
         )
 
         log.error("ERROR %s %s %s %s %s", client_ip, method, path, status, error_text)
-        return response
+        return response_bytes, None
