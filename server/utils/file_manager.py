@@ -23,15 +23,22 @@ class FileManager:
         if os.path.basename(full_path).startswith('.'):
             logger.warning(f"Блокировка доступа к скрытому файлу:{full_path}")
             raise PermissionError("Access to hidden files is prohibited!")
-        with open(full_path, 'rb') as file:
-            content = file.read()
+
+        file_size = os.path.getsize(full_path)
 
         result = mimetypes.guess_type(full_path)
         mime_type = result[0]
         if mime_type is None:
             mime_type = 'application/octet-stream'
 
-        logger.info(f"Успешно прочитан файл: {full_path}")
-        return content, mime_type
+        def file_iterator(path, chunk_s = 65536):
+            with open(path, 'rb') as file:
+                while True:
+                    chunk = file.read(chunk_s)
+                    if not chunk:
+                        break
+                    yield chunk
 
+        logger.info(f"Начата потоковая отдача файла: {full_path} ({file_size} байт)")
+        return file_iterator(full_path), file_size, mime_type
 
