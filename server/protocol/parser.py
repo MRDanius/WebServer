@@ -31,6 +31,7 @@ class Parser:
         params["operation"] = request_line[0]
         params["path"] = request_line[1]
         params["version"] = request_line[2]
+        params["headers"] = {}
 
         for line in lines[1:]:
             if line.strip() == "":
@@ -40,6 +41,6 @@ class Parser:
                 raise ValueError("Invalid header line")
 
             key, value = line.split(":", 1)
-            params[key.strip().lower()] = value.strip()
+            params["headers"][key.strip().lower()] = value.strip()
 
         return params

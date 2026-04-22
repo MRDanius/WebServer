@@ -3,9 +3,9 @@ import socket
 import ssl
 import threading
 
-from WebServer.server.core.handler import Handler
-from WebServer.server.protocol.parser import Parser
-from WebServer.server.utils.file_manager import FileManager
+from server.core.handler import Handler
+from server.protocol.parser import Parser
+from server.utils.file_manager import FileManager
 
 
 log = logging.getLogger(__name__)
@@ -75,7 +75,7 @@ class Server:
                 headers, content_generator = self.handler.handle_request(
                     method=params.get("operation"),
                     path=params.get("path"),
-                    headers=params,
+                    headers=params.get("headers"),
                     client_ip=client_ip
                 )
             except ValueError as e:

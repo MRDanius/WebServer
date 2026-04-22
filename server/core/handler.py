@@ -1,6 +1,6 @@
 import logging
 
-from WebServer.server.protocol.response_builder import ResponseBuilder
+from server.protocol.response_builder import ResponseBuilder
 
 
 log = logging.getLogger(__name__)
