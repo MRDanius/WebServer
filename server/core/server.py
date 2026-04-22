@@ -32,14 +32,14 @@ class Server:
             context =ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
             context.load_cert_chain(certfile=self.config.ssl_cert, keyfile=self.config.ssl_key)
             self.socket_listener = context.wrap_socket(self.socket_listener, server_side=True)
-            log.info(f"Сервер запущен (HTTPS) на {self.config.host}:{self.config.port}")
+            log.warning(f"Сервер запущен (HTTPS) на {self.config.host}:{self.config.port}")
         else:
-            log.info(f"Сервер запущен (HTTP) на {self.config.host}:{self.config.port}")
+            log.warning(f"Сервер запущен (HTTP) на {self.config.host}:{self.config.port}")
 
         self.accept_client()
 
     def accept_client(self):
-        log.info("Ожидание клиентов ...")
+        log.warning("Ожидание клиентов ...")
         threads = []
         while self.run_flag:
             try:
@@ -96,7 +96,7 @@ class Server:
             client_socket.close()
 
     def stop(self):
-        log.info("Остановка сервера...")
+        log.warning("Остановка сервера...")
         self.run_flag = False
         if self.socket_listener:
             self.socket_listener.close()
