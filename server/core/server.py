@@ -45,6 +45,7 @@ class Server:
             try:
                 client_socket, address = self.socket_listener.accept()
                 client_ip = address[0]
+                log.warning(f'Подключение: {client_ip} ')
 
                 client_thread = threading.Thread(
                     target=self._process_client,
@@ -61,10 +62,15 @@ class Server:
             t.join()
 
     def _process_client(self, client_socket, client_ip):
+        client_socket.settimeout(5)
         try:
             raw_request = b""
             while b"\r\n\r\n" not in raw_request:
-                chunk = client_socket.recv(4096)
+                try:
+                    chunk = client_socket.recv(4096)
+                except socket.timeout:
+                    log.warning(f"Таймаут клиента {client_ip}")
+                    return
                 if not chunk:
                     break
                 raw_request += chunk
