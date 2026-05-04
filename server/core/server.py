@@ -64,38 +64,43 @@ class Server:
     def _process_client(self, client_socket, client_ip):
         client_socket.settimeout(5)
         try:
-            raw_request = b""
-            while b"\r\n\r\n" not in raw_request:
-                try:
-                    chunk = client_socket.recv(4096)
-                except socket.timeout:
-                    log.warning(f"Таймаут клиента {client_ip}")
+            while True:
+                raw_request = b""
+                while b"\r\n\r\n" not in raw_request:
+                    try:
+                        chunk = client_socket.recv(4096)
+                    except socket.timeout:
+                        log.warning(f"Таймаут клиента {client_ip}")
+                        return
+                    if not chunk:
+                        return
+                    raw_request += chunk
+
+                if not raw_request:
                     return
-                if not chunk:
+                try:
+                    params = self.parser.parse_request(raw_request)
+                    headers, content_generator, keep_alive = self.handler.handle_request(
+                        method=params.get("operation"),
+                        path=params.get("path"),
+                        headers=params.get("headers"),
+                        version=params.get("version", "HTTP/1.1"),
+                        client_ip=client_ip
+                    )
+                except ValueError as e:
+                    log.warning(f"Некорректный запрос от {client_ip}: {e}")
+                    headers, content_generator, keep_alive = self.handler.handle_bad_request(
+                        client_ip=client_ip,
+                        error_text=str(e),
+                        keep_alive=False
+                    )
+                client_socket.sendall(headers)
+
+                if content_generator is not None:
+                    for chunk in content_generator:
+                        client_socket.sendall(chunk)
+                if not keep_alive:
                     break
-                raw_request += chunk
-            if not raw_request:
-                return
-            try:
-                params = self.parser.parse_request(raw_request)
-                headers, content_generator = self.handler.handle_request(
-                    method=params.get("operation"),
-                    path=params.get("path"),
-                    headers=params.get("headers"),
-                    client_ip=client_ip
-                )
-            except ValueError as e:
-                log.warning(f"Некорректный запрос от {client_ip}: {e}")
-                headers, content_generator = self.handler.handle_bad_request(
-                    client_ip=client_ip,
-                    error_text=str(e)
-                )
-            client_socket.sendall(headers)
-
-            if content_generator is not None:
-                for chunk in content_generator:
-                    client_socket.sendall(chunk)
-
         except Exception as e:
             log.error(f"Сбой потока при обработке {client_ip}: {e}")
         finally:
