@@ -1,4 +1,5 @@
 import logging
+import socket
 
 from server.protocol.response_builder import ResponseBuilder
 
@@ -25,6 +26,9 @@ class Handler:
     def handle_request(self, method, path, headers=None, version="HTTP/1.1", client_ip="-"):
         keep_alive = self.resolve_keep_alive(headers, version)
 
+        if path.startswith("/api"):
+            return self.handle_proxy(method, path, headers, version, client_ip, keep_alive)
+
         if method == "GET":
             headers_bytes, gen = self.handle_get(path, client_ip, keep_alive)
             return headers_bytes, gen, keep_alive
@@ -42,6 +46,98 @@ class Handler:
             keep_alive=keep_alive
         )
         return headers_bytes, gen, keep_alive
+
+    def handle_proxy(self, method, path, headers, version, client_ip, keep_alive):
+        if method not in self.METHODS:
+            return self.build_error_response(
+                status=400,
+                method=method,
+                path=path,
+                client_ip=client_ip,
+                error_text="Unsupported method for proxy",
+                keep_alive=keep_alive
+            )
+
+        try:
+            upstream_host = "httpbin.org"
+            upstream_port = 80
+
+            upstream_path = path[len("/api"):] or "/"
+
+            request_lines = [
+                f"{method} {upstream_path} {version}",
+                f"Host: {upstream_host}",
+                "Connection: close",
+            ]
+
+            for k,v in (headers or {}).items():
+                if k.lower() not in ("host", "connection"):
+                    request_lines.append(f"{k}: {v}")
+
+            request_data = "\r\n".join(request_lines) + "\r\n\r\n"
+
+            with socket.create_connection((upstream_host, upstream_port), timeout=5) as sock:
+                sock.sendall(request_data.encode())
+
+                chunks = []
+                while True:
+                    chunk = sock.recv(4096)
+                    if not chunk:
+                        break
+                    chunks.append(chunk)
+
+                raw_response = b"".join(chunks)
+
+            if not raw_response:
+                raise ValueError("Empty upstream response")
+
+            if b"\r\n\r\n" not in raw_response:
+                raise ValueError("Invalid upstream response")
+
+            header_part, body = raw_response.split(b"\r\n\r\n", 1)
+            header_lines = header_part.decode("utf-8", errors="ignore").split("\r\n")
+
+            status_line = header_lines[0].split()
+            if len(status_line) < 2:
+                raise ValueError("Invalid status line")
+
+            status_code = int(status_line[1])
+
+            response_headers = {}
+            for line in header_lines[1:]:
+                if ":" in line:
+                    k, v = line.split(":", 1)
+                    response_headers[k.strip().lower()] = v.strip()
+
+            content_type = response_headers.get("content-type", "application/octet-stream")
+
+            response_bytes = self.response_builder.build_response(
+                status=status_code,
+                content=body,
+                content_type=content_type,
+                method=method,
+                keep_alive=keep_alive
+            )
+
+            if method == "HEAD":
+                return response_bytes, None, keep_alive
+
+            log.info("PROXY %s %s -> %s%s %s", client_ip, path, upstream_host, upstream_path, status_code)
+
+            return response_bytes, None, keep_alive
+
+        except Exception:
+            log.exception("Proxy error")
+
+            return self.build_error_response(
+                status=500,
+                method=method,
+                path=path,
+                client_ip=client_ip,
+                error_text="Proxy error",
+                keep_alive=keep_alive
+            )
+
 
     def handle_get(self, path, client_ip="-", keep_alive=False):
         return self.handle_file_request(
