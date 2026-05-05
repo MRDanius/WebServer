@@ -11,8 +11,9 @@ class Handler:
     METHODS = {"GET", "HEAD"}
     ERROR_CONTENT_TYPE = "text/html"
 
-    def __init__(self, file_service):
+    def __init__(self, file_service, config):
         self.file_service = file_service
+        self.config = config
         self.response_builder = ResponseBuilder()
 
 
@@ -24,17 +25,21 @@ class Handler:
         return connection != "close"
 
     def handle_request(self, method, path, headers=None, version="HTTP/1.1", client_ip="-"):
+        headers = headers or {}
         keep_alive = self.resolve_keep_alive(headers, version)
 
+        raw_host = headers.get("host", "default")
+        clean_host = raw_host.split(':')[0]
+        root_dir = self.config.servers.get(clean_host, self.config.default_root)
         if path.startswith("/api"):
             return self.handle_proxy(method, path, headers, version, client_ip, keep_alive)
 
         if method == "GET":
-            headers_bytes, gen = self.handle_get(path, client_ip, keep_alive)
+            headers_bytes, gen = self.handle_get(path, root_dir,client_ip, keep_alive)
             return headers_bytes, gen, keep_alive
 
         if method == "HEAD":
-            headers_bytes, gen = self.handle_head(path, client_ip, keep_alive)
+            headers_bytes, gen = self.handle_head(path, root_dir,client_ip, keep_alive)
             return headers_bytes, gen, keep_alive
 
         headers_bytes, gen = self.build_error_response(
@@ -139,18 +144,20 @@ class Handler:
             )
 
 
-    def handle_get(self, path, client_ip="-", keep_alive=False):
+    def handle_get(self, path,root_dir ,client_ip="-" , keep_alive=False):
         return self.handle_file_request(
             method="GET",
             path=path,
+            root_dir = root_dir,
             client_ip=client_ip,
             keep_alive=keep_alive
         )
 
-    def handle_head(self, path, client_ip="-", keep_alive=False):
+    def handle_head(self, path,root_dir, client_ip="-", keep_alive=False):
         return self.handle_file_request(
             method="HEAD",
             path=path,
+            root_dir = root_dir,
             client_ip=client_ip,
             keep_alive=keep_alive
         )
@@ -166,9 +173,9 @@ class Handler:
         )
         return headers_bytes, gen, keep_alive
 
-    def handle_file_request(self, method, path, client_ip, keep_alive=False):
+    def handle_file_request(self, method, path, root_dir, client_ip, keep_alive=False):
         try:
-            content_generator, file_size, content_type = self.file_service.get_file(path)
+            content_generator, file_size, content_type = self.file_service.get_file(path, root_dir)
 
             headers = self.response_builder.build_headers(
                 status=200,

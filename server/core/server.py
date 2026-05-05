@@ -16,8 +16,8 @@ class Server:
         self.run_flag = False
         self.socket_listener = None
 
-        self.file_manager = FileManager(self.config.root_dir)
-        self.handler = Handler(self.file_manager)
+        self.file_manager = FileManager()
+        self.handler = Handler(self.file_manager, self.config)
         self.parser = Parser()
 
     def start(self):

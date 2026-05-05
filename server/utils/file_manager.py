@@ -6,16 +6,16 @@ import logging
 logger = logging.getLogger(__name__)
 
 class FileManager:
-    def __init__(self, root_dir, cache_limit_mb=50):
-        self.root_dir = os.path.abspath(root_dir)
+    def __init__(self, cache_limit_mb=50):
         self.cache = {}
         self.cache_limit = cache_limit_mb * 1024 * 1024
 
-    def get_file(self, address):
+    def get_file(self, address, root_dir):
         clean_address = address.lstrip('/')
-        full_path = os.path.abspath(os.path.join(self.root_dir, clean_address))
+        current_root = os.path.abspath(root_dir)
+        full_path = os.path.abspath(os.path.join(current_root, clean_address))
 
-        if not full_path.startswith(self.root_dir):
+        if not full_path.startswith(current_root):
             logger.warning(f"Попытка Path Traversal! Запрошенный address: {address}")
             raise PermissionError("Access outside the root directory is prohibited!")
 
