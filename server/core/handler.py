@@ -10,12 +10,23 @@ log = logging.getLogger(__name__)
 class Handler:
     METHODS = {"GET", "HEAD"}
     ERROR_CONTENT_TYPE = "text/html"
+    PROXY_SKIP_HEADERS = {
+        "connection",
+        "content-length",
+        "content-type",
+        "keep-alive",
+        "proxy-authenticate",
+        "proxy-authorization",
+        "te",
+        "trailer",
+        "transfer-encoding",
+        "upgrade",
+    }
 
     def __init__(self, file_service, config):
         self.file_service = file_service
         self.config = config
         self.response_builder = ResponseBuilder()
-
 
     def resolve_keep_alive(self, headers, version):
         headers = headers or {}
@@ -24,22 +35,29 @@ class Handler:
             return connection == "keep-alive"
         return connection != "close"
 
-    def handle_request(self, method, path, headers=None, version="HTTP/1.1", client_ip="-"):
+    def handle_request(
+        self,
+        method,
+        path,
+        headers=None,
+        version="HTTP/1.1",
+        client_ip="-",
+    ):
         headers = headers or {}
         keep_alive = self.resolve_keep_alive(headers, version)
 
         raw_host = headers.get("host", "default")
-        clean_host = raw_host.split(':')[0]
+        clean_host = raw_host.split(":")[0]
         root_dir = self.config.servers.get(clean_host, self.config.default_root)
-        if path.startswith("/api"):
+        if path == "/api" or path.startswith("/api/"):
             return self.handle_proxy(method, path, headers, version, client_ip, keep_alive)
 
         if method == "GET":
-            headers_bytes, gen = self.handle_get(path, root_dir,client_ip, keep_alive)
+            headers_bytes, gen = self.handle_get(path, root_dir, client_ip, keep_alive)
             return headers_bytes, gen, keep_alive
 
         if method == "HEAD":
-            headers_bytes, gen = self.handle_head(path, root_dir,client_ip, keep_alive)
+            headers_bytes, gen = self.handle_head(path, root_dir, client_ip, keep_alive)
             return headers_bytes, gen, keep_alive
 
         headers_bytes, gen = self.build_error_response(
@@ -54,7 +72,7 @@ class Handler:
 
     def handle_proxy(self, method, path, headers, version, client_ip, keep_alive):
         if method not in self.METHODS:
-            return self.build_error_response(
+            headers_bytes, gen = self.build_error_response(
                 status=400,
                 method=method,
                 path=path,
@@ -62,6 +80,9 @@ class Handler:
                 error_text="Unsupported method for proxy",
                 keep_alive=keep_alive
             )
+            return headers_bytes, gen, keep_alive
+
+        sock = None
 
         try:
             upstream_host = "httpbin.org"
@@ -75,66 +96,92 @@ class Handler:
                 "Connection: close",
             ]
 
-            for k,v in (headers or {}).items():
+            for k, v in (headers or {}).items():
                 if k.lower() not in ("host", "connection"):
                     request_lines.append(f"{k}: {v}")
 
             request_data = "\r\n".join(request_lines) + "\r\n\r\n"
 
-            with socket.create_connection((upstream_host, upstream_port), timeout=5) as sock:
-                sock.sendall(request_data.encode())
+            sock = socket.create_connection(
+                (upstream_host, upstream_port),
+                timeout=5,
+            )
+            sock.sendall(request_data.encode("utf-8"))
 
-                chunks = []
-                while True:
-                    chunk = sock.recv(4096)
-                    if not chunk:
-                        break
-                    chunks.append(chunk)
+            raw_headers = b""
+            while b"\r\n\r\n" not in raw_headers:
+                chunk = sock.recv(4096)
+                if not chunk:
+                    raise ValueError("Empty upstream response")
+                raw_headers += chunk
 
-                raw_response = b"".join(chunks)
-
-            if not raw_response:
-                raise ValueError("Empty upstream response")
-
-            if b"\r\n\r\n" not in raw_response:
-                raise ValueError("Invalid upstream response")
-
-            header_part, body = raw_response.split(b"\r\n\r\n", 1)
-            header_lines = header_part.decode("utf-8", errors="ignore").split("\r\n")
+            header_part, first_body_chunk = raw_headers.split(b"\r\n\r\n", 1)
+            header_lines = header_part.decode("utf-8").split("\r\n")
 
             status_line = header_lines[0].split()
-            if len(status_line) < 2:
+            if len(status_line) < 3:
                 raise ValueError("Invalid status line")
 
             status_code = int(status_line[1])
 
             response_headers = {}
+            extra_headers = []
             for line in header_lines[1:]:
                 if ":" in line:
                     k, v = line.split(":", 1)
-                    response_headers[k.strip().lower()] = v.strip()
+                    key = k.strip()
+                    value = v.strip()
+                    lower_key = key.lower()
+                    response_headers[lower_key] = value
+
+                    if lower_key not in self.PROXY_SKIP_HEADERS:
+                        extra_headers.append((key, value))
 
             content_type = response_headers.get("content-type", "application/octet-stream")
+            content_length = response_headers.get("content-length")
+            transfer_encoding = response_headers.get("transfer-encoding")
+            file_size = int(content_length) if content_length is not None else None
 
-            response_bytes = self.response_builder.build_response(
+            if transfer_encoding and content_length is None:
+                extra_headers.append(("Transfer-Encoding", transfer_encoding))
+
+            if content_length is None and not transfer_encoding:
+                keep_alive = False
+
+            response_headers_bytes = self.response_builder.build_headers(
                 status=status_code,
-                content=body,
+                file_size=file_size,
                 content_type=content_type,
                 method=method,
-                keep_alive=keep_alive
+                keep_alive=keep_alive,
+                extra_headers=extra_headers,
             )
 
             if method == "HEAD":
-                return response_bytes, None, keep_alive
+                sock.close()
+                sock = None
+                return response_headers_bytes, None, keep_alive
 
-            log.info("PROXY %s %s -> %s%s %s", client_ip, path, upstream_host, upstream_path, status_code)
+            log.info(
+                "PROXY %s %s -> %s%s %s",
+                client_ip,
+                path,
+                upstream_host,
+                upstream_path,
+                status_code,
+            )
 
-            return response_bytes, None, keep_alive
+            content_generator = self.stream_proxy_body(sock, first_body_chunk)
+            sock = None
+            return response_headers_bytes, content_generator, keep_alive
 
         except Exception:
+            if sock is not None:
+                sock.close()
+
             log.exception("Proxy error")
 
-            return self.build_error_response(
+            headers_bytes, gen = self.build_error_response(
                 status=500,
                 method=method,
                 path=path,
@@ -142,27 +189,45 @@ class Handler:
                 error_text="Proxy error",
                 keep_alive=keep_alive
             )
+            return headers_bytes, gen, keep_alive
 
+    def stream_proxy_body(self, sock, first_chunk):
+        try:
+            if first_chunk:
+                yield first_chunk
 
-    def handle_get(self, path,root_dir ,client_ip="-" , keep_alive=False):
+            while True:
+                chunk = sock.recv(4096)
+                if not chunk:
+                    break
+                yield chunk
+        finally:
+            sock.close()
+
+    def handle_get(self, path, root_dir, client_ip="-", keep_alive=False):
         return self.handle_file_request(
             method="GET",
             path=path,
-            root_dir = root_dir,
+            root_dir=root_dir,
             client_ip=client_ip,
             keep_alive=keep_alive
         )
 
-    def handle_head(self, path,root_dir, client_ip="-", keep_alive=False):
+    def handle_head(self, path, root_dir, client_ip="-", keep_alive=False):
         return self.handle_file_request(
             method="HEAD",
             path=path,
-            root_dir = root_dir,
+            root_dir=root_dir,
             client_ip=client_ip,
             keep_alive=keep_alive
         )
 
-    def handle_bad_request(self, client_ip="-", error_text="Bad request", keep_alive=True):
+    def handle_bad_request(
+        self,
+        client_ip="-",
+        error_text="Bad request",
+        keep_alive=False,
+    ):
         headers_bytes, gen = self.build_error_response(
             status=400,
             method="GET",
@@ -223,7 +288,15 @@ class Handler:
                 keep_alive=keep_alive
             )
 
-    def build_error_response(self, status, method, path, client_ip, error_text, keep_alive=False):
+    def build_error_response(
+        self,
+        status,
+        method,
+        path,
+        client_ip,
+        error_text,
+        keep_alive=False,
+    ):
         status_text = self.response_builder.get_status(status)
         content = f"<h1>{status} {status_text}</h1>".encode("utf-8")
 
