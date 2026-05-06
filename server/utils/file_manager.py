@@ -1,14 +1,16 @@
 import mimetypes
 import os.path
 import logging
-
+from collections import OrderedDict
 
 logger = logging.getLogger(__name__)
 
 class FileManager:
-    def __init__(self, cache_limit_mb=50):
+    def __init__(self, cache_limit_mb=50, max_open_fds=100):
         self.cache = {}
         self.cache_limit = cache_limit_mb * 1024 * 1024
+        self.fd_cache = OrderedDict()
+        self.max_open_fds = max_open_fds
 
     def get_file(self, address, root_dir):
         clean_address = address.lstrip('/')
@@ -41,6 +43,16 @@ class FileManager:
                 logger.info(f"Файл взят из кэша: {path}")
                 cached_data = self.cache[path]['content']
                 return self._make_generator(cached_data), file_size, self.cache[path]['type']
+            else:
+                del self.cache[path]
+
+        if path in self.fd_cache:
+            if self.fd_cache[path]['mtime'] != mtime:
+                try:
+                    os.close(self.fd_cache[path]['fd'])
+                except OSError:
+                    pass
+                del self.fd_cache[path]
 
         mime_type = mimetypes.guess_type(path)[0] or 'application/octet-stream'
 
@@ -57,18 +69,43 @@ class FileManager:
             return self._make_generator(content), file_size, mime_type
 
         logger.info(f"Файл слишком большой для кэша, читаем потоком: {path}")
-        return self._file_iterator(path), file_size, mime_type
+        return self._file_iterator(path, file_size, mtime), file_size, mime_type
+
+    def _get_fd(self, path, mtime):
+        if path in self.fd_cache:
+            self.fd_cache.move_to_end(path)
+            return self.fd_cache[path]['fd']
+
+        if len(self.fd_cache) >= self.max_open_fds:
+            oldest_path, old_data = self.fd_cache.popitem(last=False)
+            try:
+                os.close(old_data['fd'])
+                logger.debug(f"Закрыт старый дескриптор для {oldest_path}")
+            except OSError:
+                pass
+
+        fd = os.open(path, os.O_RDONLY)
+        self.fd_cache[path] = {'fd': fd, 'mtime': mtime}
+        return fd
 
     def _make_generator(self, data):
         yield data
 
-    def _file_iterator(self, path, chunk_size=65536):
-        with open(path, 'rb') as f:
-            while True:
-                chunk = f.read(chunk_size)
-                if not chunk:
-                    break
-                yield chunk
+    def _file_iterator(self, path, file_size, mtime, chunk_size=65536):
+        fd = self._get_fd(path, mtime)
+        offset = 0
+
+        while offset < file_size:
+            try:
+                chunk = os.pread(fd, chunk_size, offset)
+            except OSError as e:
+                break
+
+            if not chunk:
+                break
+
+            yield chunk
+            offset += len(chunk)
 
     def _generate_autoindex(self, full_path, rel_path):
         try:
