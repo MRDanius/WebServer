@@ -6,6 +6,7 @@ import threading
 from server.core.handler import Handler
 from server.protocol.parser import Parser
 from server.utils.file_manager import FileManager
+from server.utils.rate_limiter import RateLimiter
 
 
 log = logging.getLogger(__name__)
@@ -62,9 +63,11 @@ class Server:
             t.join()
 
     def _process_client(self, client_socket, client_ip):
-        client_socket.settimeout(5)
         try:
             while True:
+                client_socket.settimeout(self.config.read_timeout)
+
+                upload_limiter = RateLimiter(getattr(self.config, "upload_limit", 0))
                 raw_request = b""
                 while b"\r\n\r\n" not in raw_request:
                     try:
@@ -74,6 +77,7 @@ class Server:
                         return
                     if not chunk:
                         return
+                    upload_limiter.wait(len(chunk))
                     raw_request += chunk
 
                 if not raw_request:
@@ -94,13 +98,23 @@ class Server:
                         error_text=str(e),
                         keep_alive=False
                     )
-                client_socket.sendall(headers)
+                client_socket.settimeout(self.config.write_timeout)
+                download_limiter = RateLimiter(getattr(self.config, "download_limit", 0))
+                try:
+                    download_limiter.wait(len(headers))
+                    client_socket.sendall(headers)
 
-                if content_generator is not None:
-                    for chunk in content_generator:
-                        client_socket.sendall(chunk)
+                    if content_generator is not None:
+                        for chunk in content_generator:
+                            download_limiter.wait(len(chunk))
+                            client_socket.sendall(chunk)
+                except socket.timeout:
+                    log.warning(f"Таймаут записи (Write Timeout) для клиента {client_ip}")
+                    return
+
                 if not keep_alive:
                     break
+
         except Exception as e:
             log.error(f"Сбой потока при обработке {client_ip}: {e}")
         finally:
