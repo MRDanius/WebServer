@@ -1,20 +1,36 @@
-METHODS = {"GET", "HEAD"}
-VERSIONS = {"HTTP/1.0", "HTTP/1.1"}
+METHODS: set[str] = {"GET", "HEAD"}
+VERSIONS: set[str] = {"HTTP/1.0", "HTTP/1.1"}
 
 
 class Parser:
-    def parse_request(self, request):
+    """
+    Парсер HTTP-запросов
+    """
+
+    def parse_request(self, request: bytes) -> dict[str, str | dict[str, str]]:
+        """
+        Разбирает HTTP-запрос на составные части
+
+        Args:
+            request (bytes): сырые байты HTTP-запроса
+
+        Returns:
+            dict[str, str | dict[str, str]]: операция, путь, версия и заголовки
+
+        Raises:
+            ValueError: при пустом, неполном или некорректном запросе
+        """
         if not request:
             raise ValueError("Request is empty")
 
         if b"\r\n\r\n" not in request:
             raise ValueError("Request is incomplete")
 
-        params = {}
-        data = request.decode("utf-8")
+        params: dict[str, str | dict[str, str]] = {}
+        data: str = request.decode("utf-8")
 
-        lines = data.split("\r\n")
-        request_line = lines[0].split()
+        lines: list[str] = data.split("\r\n")
+        request_line: list[str] = lines[0].split()
 
         if len(request_line) != 3:
             raise ValueError("Invalid request line")
