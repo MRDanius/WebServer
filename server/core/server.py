@@ -2,26 +2,48 @@ import logging
 import socket
 import ssl
 import threading
+from collections.abc import Generator
+from typing import Any
 
+from server.core.config import Config
 from server.core.handler import Handler
 from server.protocol.parser import Parser
 from server.utils.file_manager import FileManager
 from server.utils.rate_limiter import RateLimiter
 
+log: logging.Logger = logging.getLogger(__name__)
 
-log = logging.getLogger(__name__)
 
 class Server:
-    def __init__(self, config):
-        self.config = config
-        self.run_flag = False
-        self.socket_listener = None
+    """
+    Многопоточный веб-сервер.
 
-        self.file_manager = FileManager()
-        self.handler = Handler(self.file_manager, self.config)
-        self.parser = Parser()
+    Обеспечивает жизненный цикл системных сокетов, сетевой обмен данными,
+    распределение клиентских подключений по потокам, а также применение
+    политик QoS (ограничение скорости и сетевые таймауты).
+    """
 
-    def start(self):
+    def __init__(self, config: Config) -> None:
+        """
+        Инициализирует основные компоненты сетевого слоя сервера
+
+        Args:
+            config (Config): объект конфигурации сервера
+        """
+        self.config: Config = config
+        self.run_flag: bool = False
+        self.socket_listener: socket.socket | None = None
+
+        # Инициализация дочерних сервисов с указанием типов
+        self.file_manager: FileManager = FileManager()
+        self.handler: Handler = Handler(self.file_manager, self.config)
+        self.parser: Parser = Parser()
+
+    def start(self) -> None:
+        """
+        Запускает слушающий сокет сервера, настраивает SSL (HTTPS) при наличии ключей
+        и переходит в режим бесконечного ожидания клиентов.
+        """
         self.run_flag = True
         self.socket_listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
         self.socket_listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
@@ -30,7 +52,7 @@ class Server:
         self.socket_listener.listen(100)
 
         if getattr(self.config, "ssl_cert", None) and getattr(self.config, "ssl_key", None):
-            context =ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
+            context: ssl.SSLContext = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
             context.load_cert_chain(certfile=self.config.ssl_cert, keyfile=self.config.ssl_key)
             self.socket_listener = context.wrap_socket(self.socket_listener, server_side=True)
             log.warning(f"Сервер запущен (HTTPS) на {self.config.host}:{self.config.port}")
@@ -39,16 +61,23 @@ class Server:
 
         self.accept_client()
 
-    def accept_client(self):
+    def accept_client(self) -> None:
+        """
+        Бесконечно принимает входящие TCP-соединения в цикле и распределяет
+        каждого клиента в отдельный изолированный поток выполнения.
+        """
         log.warning("Ожидание клиентов ...")
-        threads = []
+        threads: list[threading.Thread] = []
+
         while self.run_flag:
             try:
+                client_socket: socket.socket
+                address: tuple[str, int]
                 client_socket, address = self.socket_listener.accept()
-                client_ip = address[0]
+                client_ip: str = address[0]
                 log.warning(f'Подключение: {client_ip} ')
 
-                client_thread = threading.Thread(
+                client_thread: threading.Thread = threading.Thread(
                     target=self._process_client,
                     args=(client_socket, client_ip)
                 )
@@ -59,19 +88,32 @@ class Server:
             except Exception as e:
                 if self.run_flag:
                     log.error(f"Произошла ошибка при установке соединения: {e}")
+
         for t in threads:
             t.join()
 
-    def _process_client(self, client_socket, client_ip):
+    def _process_client(self, client_socket: socket.socket, client_ip: str) -> None:
+        """
+        Управляет жизненным циклом соединения с конкретным клиентом.
+        Обеспечивает чтение запроса с ограничением upload трафика, маршрутизацию
+        и потоковую отправку ответа с ограничением download трафика.
+
+        Args:
+            client_socket (socket.socket): сокет активного клиентского соединения
+            client_ip (str): IP-адрес подключившегося клиента
+        """
         try:
             while True:
+                # Настройка таймаута на чтение запроса
                 client_socket.settimeout(self.config.read_timeout)
 
-                upload_limiter = RateLimiter(getattr(self.config, "upload_limit", 0))
-                raw_request = b""
+                # Создание лимитера входящей скорости
+                upload_limiter: RateLimiter = RateLimiter(getattr(self.config, "upload_limit", 0))
+                raw_request: bytes = b""
+
                 while b"\r\n\r\n" not in raw_request:
                     try:
-                        chunk = client_socket.recv(4096)
+                        chunk: bytes = client_socket.recv(4096)
                     except socket.timeout:
                         log.warning(f"Таймаут клиента {client_ip}")
                         return
@@ -82,8 +124,14 @@ class Server:
 
                 if not raw_request:
                     return
+
                 try:
-                    params = self.parser.parse_request(raw_request)
+                    params: dict[str, Any] = self.parser.parse_request(raw_request)
+
+                    headers: bytes
+                    content_generator: Generator[bytes, None, None] | None
+                    keep_alive: bool
+
                     headers, content_generator, keep_alive = self.handler.handle_request(
                         method=params.get("operation"),
                         path=params.get("path"),
@@ -98,8 +146,12 @@ class Server:
                         error_text=str(e),
                         keep_alive=False
                     )
+
                 client_socket.settimeout(self.config.write_timeout)
-                download_limiter = RateLimiter(getattr(self.config, "download_limit", 0))
+
+                # Создание лимитера исходящей скорости
+                download_limiter: RateLimiter = RateLimiter(getattr(self.config, "download_limit", 0))
+
                 try:
                     download_limiter.wait(len(headers))
                     client_socket.sendall(headers)
@@ -120,7 +172,10 @@ class Server:
         finally:
             client_socket.close()
 
-    def stop(self):
+    def stop(self) -> None:
+        """
+        Безопасно останавливает главный цикл сервера и закрывает слушающий сокет.
+        """
         log.warning("Остановка сервера...")
         self.run_flag = False
         if self.socket_listener:
