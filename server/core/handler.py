@@ -40,7 +40,9 @@ class Handler:
         self.config = config
         self.response_builder: ResponseBuilder = ResponseBuilder()
 
-    def resolve_keep_alive(self, headers: dict[str, str] | None, version: str) -> bool:
+    def resolve_keep_alive(
+        self, headers: dict[str, str] | None, version: str
+    ) -> bool:
         """
         Определяет, нужно ли держать соединение открытым
 
@@ -76,23 +78,32 @@ class Handler:
             client_ip (str): IP клиента
 
         Returns:
-            tuple[bytes, Generator[bytes, None, None] | None, bool]: заголовки, тело и флаг keep-alive
+            tuple[bytes, Generator[bytes, None, None] | None, bool]:
+            заголовки, тело и флаг keep-alive
         """
         headers = headers or {}
         keep_alive: bool = self.resolve_keep_alive(headers, version)
 
         raw_host: str = headers.get("host", "default")
         clean_host: str = raw_host.split(":")[0]
-        root_dir: str = self.config.servers.get(clean_host, self.config.default_root)
+        root_dir: str = self.config.servers.get(
+            clean_host, self.config.default_root
+        )
         if path == "/api" or path.startswith("/api/"):
-            return self.handle_proxy(method, path, headers, version, client_ip, keep_alive)
+            return self.handle_proxy(
+                method, path, headers, version, client_ip, keep_alive
+            )
 
         if method == "GET":
-            headers_bytes, gen = self.handle_get(path, root_dir, client_ip, keep_alive)
+            headers_bytes, gen = self.handle_get(
+                path, root_dir, client_ip, keep_alive
+            )
             return headers_bytes, gen, keep_alive
 
         if method == "HEAD":
-            headers_bytes, gen = self.handle_head(path, root_dir, client_ip, keep_alive)
+            headers_bytes, gen = self.handle_head(
+                path, root_dir, client_ip, keep_alive
+            )
             return headers_bytes, gen, keep_alive
 
         headers_bytes, gen = self.build_error_response(
@@ -126,7 +137,8 @@ class Handler:
             keep_alive (bool): флаг постоянного соединения
 
         Returns:
-            tuple[bytes, Generator[bytes, None, None] | None, bool]: заголовки, тело и флаг keep-alive
+            tuple[bytes, Generator[bytes, None, None] | None, bool]:
+            заголовки, тело и флаг keep-alive
         """
         if method not in self.METHODS:
             headers_bytes, gen = self.build_error_response(
@@ -196,10 +208,18 @@ class Handler:
                     if lower_key not in self.PROXY_SKIP_HEADERS:
                         extra_headers.append((key, value))
 
-            content_type: str = response_headers.get("content-type", "application/octet-stream")
-            content_length: str | None = response_headers.get("content-length")
-            transfer_encoding: str | None = response_headers.get("transfer-encoding")
-            file_size: int | None = int(content_length) if content_length is not None else None
+            content_type: str = response_headers.get(
+                "content-type", "application/octet-stream"
+            )
+            content_length: str | None = response_headers.get(
+                "content-length"
+            )
+            transfer_encoding: str | None = response_headers.get(
+                "transfer-encoding"
+            )
+            file_size: int | None = (
+                int(content_length) if content_length is not None else None
+            )
 
             if transfer_encoding and content_length is None:
                 extra_headers.append(("Transfer-Encoding", transfer_encoding))
@@ -207,13 +227,15 @@ class Handler:
             if content_length is None and not transfer_encoding:
                 keep_alive = False
 
-            response_headers_bytes: bytes = self.response_builder.build_headers(
-                status=status_code,
-                file_size=file_size,
-                content_type=content_type,
-                method=method,
-                keep_alive=keep_alive,
-                extra_headers=extra_headers,
+            response_headers_bytes: bytes = (
+                self.response_builder.build_headers(
+                    status=status_code,
+                    file_size=file_size,
+                    content_type=content_type,
+                    method=method,
+                    keep_alive=keep_alive,
+                    extra_headers=extra_headers,
+                )
             )
 
             if method == "HEAD":
@@ -230,7 +252,9 @@ class Handler:
                 status_code,
             )
 
-            content_generator: Generator[bytes, None, None] = self.stream_proxy_body(sock, first_body_chunk)
+            content_generator: Generator[bytes, None, None] = (
+                self.stream_proxy_body(sock, first_body_chunk)
+            )
             sock = None
             return response_headers_bytes, content_generator, keep_alive
 
@@ -294,7 +318,8 @@ class Handler:
             keep_alive (bool): флаг постоянного соединения
 
         Returns:
-            tuple[bytes, Generator[bytes, None, None] | None]: заголовки и генератор тела
+            tuple[bytes, Generator[bytes, None, None] | None]:
+            заголовки и генератор тела
         """
         return self.handle_file_request(
             method="GET",
@@ -321,7 +346,8 @@ class Handler:
             keep_alive (bool): флаг постоянного соединения
 
         Returns:
-            tuple[bytes, Generator[bytes, None, None] | None]: заголовки и генератор тела
+            tuple[bytes, Generator[bytes, None, None] | None]:
+            заголовки и генератор тела
         """
         return self.handle_file_request(
             method="HEAD",
@@ -346,7 +372,8 @@ class Handler:
             keep_alive (bool): флаг постоянного соединения
 
         Returns:
-            tuple[bytes, None, bool]: заголовки ответа, None вместо тела и флаг keep-alive
+            tuple[bytes, None, bool]:
+            заголовки ответа, None вместо тела и флаг keep-alive
         """
         headers_bytes, gen = self.build_error_response(
             status=400,
@@ -377,13 +404,16 @@ class Handler:
             keep_alive (bool): флаг постоянного соединения
 
         Returns:
-            tuple[bytes, Generator[bytes, None, None] | None]: заголовки и генератор тела
+            tuple[bytes, Generator[bytes, None, None] | None]:
+            заголовки и генератор тела
         """
         try:
             content_generator: Generator[bytes, None, None]
             file_size: int
             content_type: str
-            content_generator, file_size, content_type = self.file_service.get_file(path, root_dir)
+            content_generator, file_size, content_type = (
+                self.file_service.get_file(path, root_dir)
+            )
 
             headers: bytes = self.response_builder.build_headers(
                 status=200,
@@ -465,5 +495,8 @@ class Handler:
             keep_alive=keep_alive
         )
 
-        log.error("ERROR %s %s %s %s %s", client_ip, method, path, status, error_text)
+        log.error(
+            "ERROR %s %s %s %s %s",
+            client_ip, method, path, status, error_text,
+        )
         return response_bytes, None

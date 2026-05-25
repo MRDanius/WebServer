@@ -17,7 +17,11 @@ class OwnFormatter(logging.Formatter):
             str: отформатированное сообщение
         """
         message: str = super().format(record)
-        return message.replace('\r\n', ' | ').replace('\n', ' | ').replace('\r', ' | ')
+        return (
+            message.replace('\r\n', ' | ')
+            .replace('\n', ' | ')
+            .replace('\r', ' | ')
+        )
 
 
 def configure_logger(log_file: str) -> None:
@@ -40,7 +44,9 @@ def configure_logger(log_file: str) -> None:
         datefmt='%Y-%m-%d %H:%M:%S',
     )
 
-    file_handler: logging.FileHandler = logging.FileHandler(log_file, encoding='utf-8')
+    file_handler: logging.FileHandler = logging.FileHandler(
+        log_file, encoding='utf-8'
+    )
     file_handler.setLevel(logging.DEBUG)
     file_handler.setFormatter(file_formatter)
 

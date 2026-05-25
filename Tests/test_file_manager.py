@@ -4,6 +4,7 @@ import tempfile
 import unittest
 from collections.abc import Generator
 from server.utils.file_manager import FileManager
+from unittest.mock import patch
 
 
 class FileManagerTests(unittest.TestCase):
@@ -34,11 +35,20 @@ class FileManagerTests(unittest.TestCase):
         """
         Очистка файлов после завершения теста
         """
+
+        for path_key in list(self.fm.fd_cache.keys()):
+            try:
+                os.close(self.fm.fd_cache[path_key]["fd"])
+            except OSError:
+                pass
+
+        self.fm.fd_cache.clear()
+
         shutil.rmtree(self.test_dir)
 
     def test_get_file_success(self) -> None:
         """
-        Проверка успешного чтения обычного файла и корректности возвращаемых типов
+        Проверка успешного чтения файла и типов возвращаемых значений
         """
         gen: Generator[bytes, None, None]
         size: int
@@ -101,19 +111,29 @@ class FileManagerTests(unittest.TestCase):
         """
         Проверка работы потокового итератора для файлов, превышающих лимит кэша
         """
+
         large_path: str = os.path.join(self.test_dir, "large.bin")
         large_content: bytes = b"A" * (2 * 1024 * 1024)
+
         with open(large_path, "wb") as f:
             f.write(large_content)
 
-        gen: Generator[bytes, None, None]
-        size: int
-        mime: str
-        gen, size, mime = self.fm.get_file("/large.bin", self.test_dir)
-        content: bytes = b"".join(gen)
+        def fake_pread(fd: int, chunk_size: int, offset: int) -> bytes:
+            with open(large_path, "rb") as file:
+                file.seek(offset)
+                return file.read(chunk_size)
 
-        self.assertEqual(content, large_content)
-        self.assertEqual(size, len(large_content))
+        with patch("os.pread", side_effect=fake_pread, create=True):
+            gen: Generator[bytes, None, None]
+            size: int
+            mime: str
+
+            gen, size, mime = self.fm.get_file("/large.bin", self.test_dir)
+
+            content: bytes = b"".join(gen)
+
+            self.assertEqual(content, large_content)
+            self.assertEqual(size, len(large_content))
 
 
 if __name__ == "__main__":

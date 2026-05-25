@@ -36,7 +36,8 @@ class ResponseBuilder:
             content_type (str): тип содержимого
             method (str): метод запроса
             keep_alive (bool): использовать ли постоянное соединение
-            extra_headers (list[tuple[str, str]] | None): дополнительные заголовки
+            extra_headers (list[tuple[str, str]] | None):
+            дополнительные заголовки
 
         Returns:
             bytes: заголовки ответа в байтах
@@ -78,7 +79,8 @@ class ResponseBuilder:
             content_type (str): тип содержимого
             method (str): метод запроса
             keep_alive (bool): использовать ли постоянное соединение
-            extra_headers (list[tuple[str, str]] | None): дополнительные заголовки
+            extra_headers (list[tuple[str, str]] | None):
+            дополнительные заголовки
 
         Returns:
             bytes:  HTTP-ответ в байтах

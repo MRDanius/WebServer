@@ -14,6 +14,7 @@ def get_log_filename(file_path='config.json', default_name='webserver.log'):
     except Exception:
         return default_name
 
+
 def main():
     actual_log_file = get_log_filename()
     configure_logger(actual_log_file)
@@ -26,10 +27,13 @@ def main():
         web_server.start()
     except KeyboardInterrupt:
         print("\n")
-        logger.info("Получен сигнал прерывания (Ctrl+C). Сервер начинает остановку")
+        logger.info(
+            "Получен сигнал прерывания (Ctrl+C). Сервер начинает остановку"
+        )
     finally:
         web_server.stop()
         logger.info("Сервер успешно остановлен ")
+
 
 if __name__ == '__main__':
     main()

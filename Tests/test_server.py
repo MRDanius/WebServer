@@ -60,7 +60,9 @@ class ServerTests(unittest.TestCase):
             self.server.start()
             mock_accept.assert_called_once()
 
-        mock_sock.setsockopt.assert_called_once_with(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        mock_sock.setsockopt.assert_called_once_with(
+            socket.SOL_SOCKET, socket.SO_REUSEADDR, 1
+        )
         mock_sock.bind.assert_called_with(("127.0.0.1", 8080))
         mock_sock.listen.assert_called_once_with(100)
 

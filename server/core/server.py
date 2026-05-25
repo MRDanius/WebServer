@@ -41,23 +41,42 @@ class Server:
 
     def start(self) -> None:
         """
-        Запускает слушающий сокет сервера, настраивает SSL (HTTPS) при наличии ключей
-        и переходит в режим бесконечного ожидания клиентов.
+        Запускает слушающий сокет сервера, настраивает SSL (HTTPS)
+        при наличии ключей и переходит в режим ожидания клиентов
         """
         self.run_flag = True
-        self.socket_listener = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-        self.socket_listener.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        self.socket_listener = socket.socket(
+            socket.AF_INET, socket.SOCK_STREAM
+        )
+        self.socket_listener.setsockopt(
+            socket.SOL_SOCKET, socket.SO_REUSEADDR, 1
+        )
         self.socket_listener.settimeout(1.0)
         self.socket_listener.bind((self.config.host, self.config.port))
         self.socket_listener.listen(100)
 
-        if getattr(self.config, "ssl_cert", None) and getattr(self.config, "ssl_key", None):
-            context: ssl.SSLContext = ssl.create_default_context(ssl.Purpose.CLIENT_AUTH)
-            context.load_cert_chain(certfile=self.config.ssl_cert, keyfile=self.config.ssl_key)
-            self.socket_listener = context.wrap_socket(self.socket_listener, server_side=True)
-            log.warning(f"Сервер запущен (HTTPS) на {self.config.host}:{self.config.port}")
+        if getattr(self.config, "ssl_cert", None) and getattr(
+            self.config, "ssl_key", None
+        ):
+            context: ssl.SSLContext = ssl.create_default_context(
+                ssl.Purpose.CLIENT_AUTH
+            )
+            context.load_cert_chain(
+                certfile=self.config.ssl_cert,
+                keyfile=self.config.ssl_key,
+            )
+            self.socket_listener = context.wrap_socket(
+                self.socket_listener, server_side=True
+            )
+            log.warning(
+                f"Сервер запущен (HTTPS) на "
+                f"{self.config.host}:{self.config.port}"
+            )
         else:
-            log.warning(f"Сервер запущен (HTTP) на {self.config.host}:{self.config.port}")
+            log.warning(
+                f"Сервер запущен (HTTP) на "
+                f"{self.config.host}:{self.config.port}"
+            )
 
         self.accept_client()
 
@@ -87,20 +106,24 @@ class Server:
                 continue
             except Exception as e:
                 if self.run_flag:
-                    log.error(f"Произошла ошибка при установке соединения: {e}")
+                    log.error(
+                        f"Произошла ошибка при установке соединения: {e}"
+                    )
 
         for t in threads:
             t.join()
 
-    def _process_client(self, client_socket: socket.socket, client_ip: str) -> None:
+    def _process_client(
+        self, client_socket: socket.socket, client_ip: str
+    ) -> None:
         """
-        Управляет жизненным циклом соединения с конкретным клиентом.
-        Обеспечивает чтение запроса с ограничением upload трафика, маршрутизацию
-        и потоковую отправку ответа с ограничением download трафика.
+        Управляет жизненным циклом соединения с клиентом.
+        Читает запрос с лимитом upload, маршрутизирует
+        и отправляет ответ с лимитом download.
 
         Args:
-            client_socket (socket.socket): сокет активного клиентского соединения
-            client_ip (str): IP-адрес подключившегося клиента
+            client_socket (socket.socket): сокет клиентского соединения
+            client_ip (str): IP-адрес клиента
         """
         try:
             while True:
@@ -108,7 +131,9 @@ class Server:
                 client_socket.settimeout(self.config.read_timeout)
 
                 # Создание лимитера входящей скорости
-                upload_limiter: RateLimiter = RateLimiter(getattr(self.config, "upload_limit", 0))
+                upload_limiter: RateLimiter = RateLimiter(
+                    getattr(self.config, "upload_limit", 0)
+                )
                 raw_request: bytes = b""
 
                 while b"\r\n\r\n" not in raw_request:
@@ -126,31 +151,39 @@ class Server:
                     return
 
                 try:
-                    params: dict[str, Any] = self.parser.parse_request(raw_request)
+                    params: dict[str, Any] = self.parser.parse_request(
+                        raw_request
+                    )
 
                     headers: bytes
                     content_generator: Generator[bytes, None, None] | None
                     keep_alive: bool
 
-                    headers, content_generator, keep_alive = self.handler.handle_request(
-                        method=params.get("operation"),
-                        path=params.get("path"),
-                        headers=params.get("headers"),
-                        version=params.get("version", "HTTP/1.1"),
-                        client_ip=client_ip
+                    headers, content_generator, keep_alive = (
+                        self.handler.handle_request(
+                            method=params.get("operation"),
+                            path=params.get("path"),
+                            headers=params.get("headers"),
+                            version=params.get("version", "HTTP/1.1"),
+                            client_ip=client_ip,
+                        )
                     )
                 except ValueError as e:
                     log.warning(f"Некорректный запрос от {client_ip}: {e}")
-                    headers, content_generator, keep_alive = self.handler.handle_bad_request(
-                        client_ip=client_ip,
-                        error_text=str(e),
-                        keep_alive=False
+                    headers, content_generator, keep_alive = (
+                        self.handler.handle_bad_request(
+                            client_ip=client_ip,
+                            error_text=str(e),
+                            keep_alive=False,
+                        )
                     )
 
                 client_socket.settimeout(self.config.write_timeout)
 
                 # Создание лимитера исходящей скорости
-                download_limiter: RateLimiter = RateLimiter(getattr(self.config, "download_limit", 0))
+                download_limiter: RateLimiter = RateLimiter(
+                    getattr(self.config, "download_limit", 0)
+                )
 
                 try:
                     download_limiter.wait(len(headers))
@@ -161,7 +194,10 @@ class Server:
                             download_limiter.wait(len(chunk))
                             client_socket.sendall(chunk)
                 except socket.timeout:
-                    log.warning(f"Таймаут записи (Write Timeout) для клиента {client_ip}")
+                    log.warning(
+                        f"Таймаут записи (Write Timeout) "
+                        f"для клиента {client_ip}"
+                    )
                     return
 
                 if not keep_alive:
@@ -174,7 +210,7 @@ class Server:
 
     def stop(self) -> None:
         """
-        Безопасно останавливает главный цикл сервера и закрывает слушающий сокет.
+        Останавливает главный цикл сервера и закрывает слушающий сокет.
         """
         log.warning("Остановка сервера...")
         self.run_flag = False

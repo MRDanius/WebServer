@@ -16,13 +16,15 @@ class FileManager:
     в RAM и кэширование дескрипторов (FD-Cache) для тяжелых файлов.
     """
 
-    def __init__(self, cache_limit_mb: int = 50, max_open_fds: int = 100) -> None:
+    def __init__(
+        self, cache_limit_mb: int = 50, max_open_fds: int = 100
+    ) -> None:
         """
         Инициализирует менеджер файлов и структуры данных кэша
 
         Args:
-            cache_limit_mb (int): максимальный размер файла для кэширования в RAM (в МБ)
-            max_open_fds (int): максимальное количество одновременно открытых дескрипторов файлов
+            cache_limit_mb (int): лимит размера файла для RAM-кэша (в МБ)
+            max_open_fds (int): лимит открытых файловых дескрипторов
         """
         # Явное указание типов для структур кэширования
         self.cache: dict[str, dict[str, Any]] = {}
@@ -30,28 +32,37 @@ class FileManager:
         self.fd_cache: OrderedDict[str, dict[str, Any]] = OrderedDict()
         self.max_open_fds: int = max_open_fds
 
-    def get_file(self, address: str, root_dir: str) -> tuple[Generator[bytes, None, None], int, str]:
+    def get_file(
+        self, address: str, root_dir: str
+    ) -> tuple[Generator[bytes, None, None], int, str]:
         """
-        Производит валидацию пути и возвращает генератор контента, размер и MIME-тип объекта
+        Валидирует путь и возвращает генератор, размер и MIME-тип
 
         Args:
             address (str): относительный путь запроса (URL)
             root_dir (str): корневая папка текущего виртуального хоста
 
         Returns:
-            tuple[Generator[bytes, None, None], int, str]: генератор байт, размер файла и MIME-тип
+            tuple[Generator[bytes, None, None], int, str]:
+            генератор байт, размер файла и MIME-тип
 
         Raises:
-            PermissionError: при попытке Path Traversal или доступе к скрытым файлам
+            PermissionError: при Path Traversal или доступе к скрытым файлам
         """
         clean_address: str = address.lstrip('/')
         current_root: str = os.path.abspath(root_dir)
-        full_path: str = os.path.abspath(os.path.join(current_root, clean_address))
+        full_path: str = os.path.abspath(
+            os.path.join(current_root, clean_address)
+        )
 
         # Защита от выхода за пределы корня сайта
         if not full_path.startswith(current_root):
-            logger.warning(f"Попытка Path Traversal! Запрошенный address: {address}")
-            raise PermissionError("Access outside the root directory is prohibited!")
+            logger.warning(
+                f"Попытка Path Traversal! Запрошенный address: {address}"
+            )
+            raise PermissionError(
+                "Access outside the root directory is prohibited!"
+            )
 
         # Блокировка скрытых файлов типа .env
         if os.path.basename(full_path).startswith('.'):
@@ -68,15 +79,18 @@ class FileManager:
 
         return self._process_file(full_path)
 
-    def _process_file(self, path: str) -> tuple[Generator[bytes, None, None], int, str]:
+    def _process_file(
+        self, path: str
+    ) -> tuple[Generator[bytes, None, None], int, str]:
         """
-        Определяет стратегию отдачи файла на основе его размера и актуальности кэша
+        Выбирает стратегию отдачи файла по размеру и кэшу
 
         Args:
             path (str): абсолютный путь к файлу в файловой системе
 
         Returns:
-            tuple[Generator[bytes, None, None], int, str]: генератор байт, размер файла и MIME-тип
+            tuple[Generator[bytes, None, None], int, str]:
+            генератор байт, размер файла и MIME-тип
         """
         stat: os.stat_result = os.stat(path)
         mtime: float = stat.st_mtime
@@ -87,7 +101,11 @@ class FileManager:
             if self.cache[path]['mtime'] == mtime:
                 logger.info(f"Файл взят из кэша: {path}")
                 cached_data: bytes = self.cache[path]['content']
-                return self._make_generator(cached_data), file_size, self.cache[path]['type']
+                return (
+                    self._make_generator(cached_data),
+                    file_size,
+                    self.cache[path]['type'],
+                )
             else:
                 del self.cache[path]
 
@@ -100,9 +118,11 @@ class FileManager:
                     pass
                 del self.fd_cache[path]
 
-        mime_type: str = mimetypes.guess_type(path)[0] or 'application/octet-stream'
+        mime_type: str = (
+            mimetypes.guess_type(path)[0] or 'application/octet-stream'
+        )
 
-        # 3. Выбор стратегии: сохранение мелкого файла в RAM или стриминг тяжелого файла
+        # 3. Выбор стратегии: RAM-кэш или стриминг тяжелого файла
         if file_size <= self.cache_limit:
             with open(path, 'rb') as f:
                 content: bytes = f.read()
@@ -115,8 +135,14 @@ class FileManager:
             logger.info(f"Файл добавлен в кэш: {path}")
             return self._make_generator(content), file_size, mime_type
 
-        logger.info(f"Файл слишком большой для кэша, читаем потоком: {path}")
-        return self._file_iterator(path, file_size, mtime), file_size, mime_type
+        logger.info(
+            f"Файл слишком большой для кэша, читаем потоком: {path}"
+        )
+        return (
+            self._file_iterator(path, file_size, mtime),
+            file_size,
+            mime_type,
+        )
 
     def _get_fd(self, path: str, mtime: float) -> int:
         """
@@ -150,7 +176,7 @@ class FileManager:
 
     def _make_generator(self, data: bytes) -> Generator[bytes, None, None]:
         """
-        Оборачивает сырые байты в генератор для стандартизации интерфейса отдачи
+        Оборачивает байты в генератор для единого интерфейса отдачи
 
         Args:
             data (bytes): данные для отправки
@@ -168,7 +194,7 @@ class FileManager:
             chunk_size: int = 65536
     ) -> Generator[bytes, None, None]:
         """
-        Потоково читает тяжелый файл с диска порциями с помощью атомарного os.pread
+        Потоково читает тяжелый файл порциями через os.pread
 
         Args:
             path (str): абсолютный путь к файлу
@@ -194,16 +220,19 @@ class FileManager:
             yield chunk
             offset += len(chunk)
 
-    def _generate_autoindex(self, full_path: str, rel_path: str) -> tuple[Generator[bytes, None, None], int, str]:
+    def _generate_autoindex(
+        self, full_path: str, rel_path: str
+    ) -> tuple[Generator[bytes, None, None], int, str]:
         """
-        Формирует HTML-страницу со списком содержимого папки на лету (Autoindex)
+        Формирует HTML-листинг содержимого папки (Autoindex)
 
         Args:
             full_path (str): абсолютный путь к папке в системе
             rel_path (str): относительный URL-путь папки
 
         Returns:
-            tuple[Generator[bytes, None, None], int, str]: генератор HTML-кода, его размер и MIME-тип text/html
+            tuple[Generator[bytes, None, None], int, str]:
+            генератор HTML, размер и MIME-тип text/html
 
         Raises:
             PermissionError: при отсутствии прав на чтение директории
@@ -213,7 +242,10 @@ class FileManager:
         except PermissionError:
             raise PermissionError("Нет прав на просмотр содержимого папки")
 
-        html: str = f"<html><head><meta charset='utf-8'><title>Index of {rel_path}</title></head>"
+        html: str = (
+            f"<html><head><meta charset='utf-8'>"
+            f"<title>Index of {rel_path}</title></head>"
+        )
         html += f"<body><h1>Содержимое папки: {rel_path}</h1><hr><ul>"
 
         if rel_path != "/":
@@ -227,7 +259,9 @@ class FileManager:
             suffix: str = "/" if os.path.isdir(item_full_path) else ""
             html += f'<li><a href="{item}{suffix}">{item}{suffix}</a></li>'
 
-        html += "</ul><hr><footer><i>Web Server 2026</i></footer></body></html>"
+        html += (
+            "</ul><hr><footer><i>Web Server 2026</i></footer></body></html>"
+        )
 
         data: bytes = html.encode('utf-8')
         return self._make_generator(data), len(data), "text/html"

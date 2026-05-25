@@ -40,7 +40,9 @@ class Config:
             self.host = data.get("host_ip", self.host)
             self.port = data.get("port", self.port)
 
-            self.default_root = data.get("default_root", data.get("root_dir", self.default_root))
+            self.default_root = data.get(
+                "default_root", data.get("root_dir", self.default_root)
+            )
             self.servers = data.get("servers", {})
 
             self.log_file = data.get("log_file", self.log_file)
@@ -50,13 +52,26 @@ class Config:
             self.read_timeout = data.get("read_timeout", self.read_timeout)
             self.write_timeout = data.get("write_timeout", self.write_timeout)
 
-            self.upload_limit = data.get("upload_limit_bps", self.upload_limit)
-            self.download_limit = data.get("download_limit_bps", self.download_limit)
+            self.upload_limit = data.get(
+                "upload_limit_bps", self.upload_limit
+            )
+            self.download_limit = data.get(
+                "download_limit_bps", self.download_limit
+            )
 
             log.info("Конфиг успешно загружен из файла")
         except FileNotFoundError:
-            log.warning("Файл конфигурации не найден, будут использованы значения по умолчанию")
+            log.warning(
+                "Файл конфигурации не найден, "
+                "будут использованы значения по умолчанию"
+            )
         except json.JSONDecodeError:
-            log.error("Ошибка в файле конфигурации, проверьте синтаксис JSON. Будут использованы значения по умолчанию")
+            log.error(
+                "Ошибка в файле конфигурации, проверьте синтаксис JSON. "
+                "Будут использованы значения по умолчанию"
+            )
         except Exception as e:
-            log.error(f"Непредвиденная ошибка при загрузке конфига: {e}", exc_info=True)
+            log.error(
+                f"Непредвиденная ошибка при загрузке конфига: {e}",
+                exc_info=True,
+            )

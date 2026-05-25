@@ -22,7 +22,9 @@ class ResponseBuilderTests(unittest.TestCase):
         """
         content: bytes = b"<h1>Hello</h1>"
 
-        result: bytes = self.builder.build_response(200, content, "text/html", "GET")
+        result: bytes = self.builder.build_response(
+            200, content, "text/html", "GET"
+        )
 
         expected: bytes = (
             b"HTTP/1.1 200 OK\r\n"
@@ -41,7 +43,9 @@ class ResponseBuilderTests(unittest.TestCase):
         """
         content: bytes = b"<h1>Hello</h1>"
 
-        result: bytes = self.builder.build_response(200, content, "text/html", "HEAD")
+        result: bytes = self.builder.build_response(
+            200, content, "text/html", "HEAD"
+        )
 
         expected: bytes = (
             b"HTTP/1.1 200 OK\r\n"
@@ -84,7 +88,9 @@ class ResponseBuilderTests(unittest.TestCase):
         """
         content: bytes = b"HELLo"
 
-        result: bytes = self.builder.build_response(200, content, "text/plain", "GET")
+        result: bytes = self.builder.build_response(
+            200, content, "text/plain", "GET"
+        )
 
         self.assertIn(b"Content-Length: 5\r\n", result)
 

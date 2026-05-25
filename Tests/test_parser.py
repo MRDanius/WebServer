@@ -27,7 +27,9 @@ class ParseRequestTests(unittest.TestCase):
             b"\r\n"
         )
 
-        result: dict[str, str | dict[str, str]] = self.parser.parse_request(request)
+        result: dict[str, str | dict[str, str]] = (
+            self.parser.parse_request(request)
+        )
 
         self.assertEqual(result["operation"], "GET")
         self.assertEqual(result["path"], "/index.html")
@@ -45,7 +47,9 @@ class ParseRequestTests(unittest.TestCase):
             b"\r\n"
         )
 
-        result: dict[str, str | dict[str, str]] = self.parser.parse_request(request)
+        result: dict[str, str | dict[str, str]] = (
+            self.parser.parse_request(request)
+        )
 
         self.assertEqual(result["operation"], "HEAD")
         self.assertEqual(result["path"], "/")
@@ -87,7 +91,10 @@ class ParseRequestTests(unittest.TestCase):
         """
         Проверяет ошибку при недопустимом методе
         """
-        request: bytes = b"POST /index.html HTTP/1.1\r\nHost: localhost:8080\r\n\r\n"
+        request: bytes = (
+            b"POST /index.html HTTP/1.1\r\n"
+            b"Host: localhost:8080\r\n\r\n"
+        )
 
         with self.assertRaises(ValueError) as error:
             self.parser.parse_request(request)
@@ -98,7 +105,10 @@ class ParseRequestTests(unittest.TestCase):
         """
         Проверяет ошибку при некорректном пути
         """
-        request: bytes = b"GET index.html HTTP/1.1\r\nHost: localhost:8080\r\n\r\n"
+        request: bytes = (
+            b"GET index.html HTTP/1.1\r\n"
+            b"Host: localhost:8080\r\n\r\n"
+        )
 
         with self.assertRaises(ValueError) as error:
             self.parser.parse_request(request)
@@ -109,7 +119,10 @@ class ParseRequestTests(unittest.TestCase):
         """
         Проверяет ошибку при недопустимой версии HTTP
         """
-        request: bytes = b"GET /index.html HTTP/2.0\r\nHost: localhost:8080\r\n\r\n"
+        request: bytes = (
+            b"GET /index.html HTTP/2.0\r\n"
+            b"Host: localhost:8080\r\n\r\n"
+        )
 
         with self.assertRaises(ValueError) as error:
             self.parser.parse_request(request)
