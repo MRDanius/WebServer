@@ -2,7 +2,6 @@ import socket
 import ssl
 import unittest
 from collections.abc import Generator
-from typing import Any
 from unittest.mock import MagicMock, patch
 
 from server.core.config import Config
@@ -40,7 +39,7 @@ class ServerTests(unittest.TestCase):
 
     def test_stop(self) -> None:
         """
-        Проверяет корректное изменение флагов и закрытия сокета при остановке
+        Проверяет корректное изменение флагов и закрытие сокета
         """
         self.server.run_flag = True
         self.server.socket_listener = MagicMock()
@@ -73,10 +72,10 @@ class ServerTests(unittest.TestCase):
     @patch("server.core.server.ssl.create_default_context")
     @patch("server.core.server.socket.socket")
     def test_start_https_success(
-            self, mock_socket_class: MagicMock, mock_ssl_context: MagicMock
+        self, mock_socket_class: MagicMock, mock_ssl_context: MagicMock
     ) -> None:
         """
-        Проверяет инициализацию, загрузку сертификатов и обертку сокета в режиме HTTPS
+        Проверяет инициализацию и настройку контекста HTTPS
         """
         self.mock_config.ssl_cert = "cert.pem"
         self.mock_config.ssl_key = "key.pem"
@@ -123,10 +122,12 @@ class ServerTests(unittest.TestCase):
 
     def test_process_client_value_error_handling(self) -> None:
         """
-        Проверяет перехват ValueError от парсера и отправку bad_request ответа
+        Проверяет перехват ValueError от парсера и отправку 400
         """
         mock_client_socket: MagicMock = MagicMock()
-        mock_client_socket.recv.side_effect = [b"INVALID REQUEST\r\n\r\n", b""]
+        mock_client_socket.recv.side_effect = [
+            b"INVALID REQUEST\r\n\r\n", b""
+        ]
 
         self.server.parser.parse_request = MagicMock(
             side_effect=ValueError("Invalid HTTP format")
@@ -138,7 +139,9 @@ class ServerTests(unittest.TestCase):
         self.server._process_client(mock_client_socket, "127.0.0.1")
 
         self.server.handler.handle_bad_request.assert_called_once_with(
-            client_ip="127.0.0.1", error_text="Invalid HTTP format", keep_alive=False
+            client_ip="127.0.0.1",
+            error_text="Invalid HTTP format",
+            keep_alive=False,
         )
         mock_client_socket.sendall.assert_called_once_with(
             b"HTTP/1.1 400 Bad Request\r\n\r\n"
@@ -147,10 +150,12 @@ class ServerTests(unittest.TestCase):
 
     def test_process_client_streaming_response(self) -> None:
         """
-        Проверяет успешный цикл отправки заголовков и итерации по генератору тела ответа
+        Проверяет цикл отправки и итерации по генератору тела ответа
         """
         mock_client_socket: MagicMock = MagicMock()
-        mock_client_socket.recv.side_effect = [b"GET /index.html HTTP/1.1\r\n\r\n", b""]
+        mock_client_socket.recv.side_effect = [
+            b"GET /index.html HTTP/1.1\r\n\r\n", b""
+        ]
 
         def sample_generator() -> Generator[bytes, None, None]:
             yield b"chunk1"
@@ -159,7 +164,11 @@ class ServerTests(unittest.TestCase):
         gen: Generator[bytes, None, None] = sample_generator()
 
         self.server.parser.parse_request = MagicMock(
-            return_value={"operation": "GET", "path": "/index.html", "version": "HTTP/1.1"}
+            return_value={
+                "operation": "GET",
+                "path": "/index.html",
+                "version": "HTTP/1.1",
+            }
         )
         self.server.handler.handle_request = MagicMock(
             return_value=(b"HTTP/1.1 200 OK\r\n\r\n", gen, False)
@@ -174,14 +183,20 @@ class ServerTests(unittest.TestCase):
 
     def test_process_client_write_timeout(self) -> None:
         """
-        Проверяет безопасный выход из метода при таймауте сокета во время отправки данных
+        Проверяет безопасный выход из метода при таймауте записи
         """
         mock_client_socket: MagicMock = MagicMock()
-        mock_client_socket.recv.side_effect = [b"GET / HTTP/1.1\r\n\r\n", b""]
+        mock_client_socket.recv.side_effect = [
+            b"GET / HTTP/1.1\r\n\r\n", b""
+        ]
         mock_client_socket.sendall.side_effect = socket.timeout
 
         self.server.parser.parse_request = MagicMock(
-            return_value={"operation": "GET", "path": "/", "version": "HTTP/1.1"}
+            return_value={
+                "operation": "GET",
+                "path": "/",
+                "version": "HTTP/1.1",
+            }
         )
         self.server.handler.handle_request = MagicMock(
             return_value=(b"HTTP/1.1 200 OK\r\n\r\n", None, False)
@@ -193,10 +208,12 @@ class ServerTests(unittest.TestCase):
 
     def test_process_client_critical_exception_safety(self) -> None:
         """
-        Проверяет, что при непредвиденном критическом исключении сокет гарантированно закроется в блоке finally
+        Проверяет закрытие сокета при критическом исключении
         """
         mock_client_socket: MagicMock = MagicMock()
-        mock_client_socket.recv.side_effect = RuntimeError("Critical hardware failure")
+        mock_client_socket.recv.side_effect = RuntimeError(
+            "Critical hardware failure"
+        )
 
         self.server._process_client(mock_client_socket, "127.0.0.1")
 
