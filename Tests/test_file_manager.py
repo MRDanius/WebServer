@@ -175,7 +175,7 @@ class FileManagerTests(unittest.TestCase):
 
         patch_open = patch("os.open", side_effect=[10, 11, 12])
         patch_close = patch("os.close")
-        patch_pread = patch("os.pread", return_value=b"")
+        patch_pread = patch("os.pread", return_value=b"", create=True)
 
         with patch_open, patch_close as mock_close, patch_pread:
             gen0: Generator[bytes, None, None]
@@ -197,6 +197,7 @@ class FileManagerTests(unittest.TestCase):
             next(gen2, None)
 
             mock_close.assert_called_once_with(10)
+            self.fm.fd_cache.clear()
 
     def test_fd_cache_invalidation_on_mtime_change(self) -> None:
         """
@@ -211,7 +212,7 @@ class FileManagerTests(unittest.TestCase):
 
         patch_open = patch("os.open", return_value=20)
         patch_close = patch("os.close")
-        patch_pread = patch("os.pread", return_value=b"")
+        patch_pread = patch("os.pread", return_value=b"", create=True)
 
         with patch_open, patch_close as mock_close, patch_pread:
             gen1: Generator[bytes, None, None]
@@ -231,6 +232,7 @@ class FileManagerTests(unittest.TestCase):
             next(gen2, None)
 
             mock_close.assert_called_once_with(20)
+            self.fm.fd_cache.clear()
 
     def test_autoindex_permission_error(self) -> None:
         """
