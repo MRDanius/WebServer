@@ -3,8 +3,8 @@ import shutil
 import tempfile
 import unittest
 from collections.abc import Generator
-from server.utils.file_manager import FileManager
 from unittest.mock import patch
+from server.utils.file_manager import FileManager
 
 
 class FileManagerTests(unittest.TestCase):
@@ -35,7 +35,6 @@ class FileManagerTests(unittest.TestCase):
         """
         Очистка файлов после завершения теста
         """
-
         for path_key in list(self.fm.fd_cache.keys()):
             try:
                 os.close(self.fm.fd_cache[path_key]["fd"])
@@ -43,7 +42,6 @@ class FileManagerTests(unittest.TestCase):
                 pass
 
         self.fm.fd_cache.clear()
-
         shutil.rmtree(self.test_dir)
 
     def test_get_file_success(self) -> None:
@@ -111,7 +109,6 @@ class FileManagerTests(unittest.TestCase):
         """
         Проверка работы потокового итератора для файлов, превышающих лимит кэша
         """
-
         large_path: str = os.path.join(self.test_dir, "large.bin")
         large_content: bytes = b"A" * (2 * 1024 * 1024)
 
@@ -129,11 +126,91 @@ class FileManagerTests(unittest.TestCase):
             mime: str
 
             gen, size, mime = self.fm.get_file("/large.bin", self.test_dir)
-
             content: bytes = b"".join(gen)
 
             self.assertEqual(content, large_content)
             self.assertEqual(size, len(large_content))
+
+    def test_ram_cache_hit_and_invalidation(self) -> None:
+        """
+        Проверка попадания файла в RAM-кэш и его инвалидацию при изменении mtime
+        """
+        gen1: Generator[bytes, None, None]
+        size1: int
+        mime1: str
+        gen1, size1, mime1 = self.fm.get_file("/index.html", self.test_dir)
+        b"".join(gen1)
+
+        gen2: Generator[bytes, None, None]
+        size2: int
+        mime2: str
+        gen2, size2, mime2 = self.fm.get_file("/index.html", self.test_dir)
+        content: bytes = b"".join(gen2)
+        self.assertEqual(content, b"<h1>Test Index</h1>")
+
+        os.utime(self.index_path, (os.path.getatime(self.index_path), os.path.getmtime(self.index_path) + 10.0))
+
+        gen3: Generator[bytes, None, None]
+        size3: int
+        mime3: str
+        gen3, size3, mime3 = self.fm.get_file("/index.html", self.test_dir)
+        content3: bytes = b"".join(gen3)
+        self.assertEqual(content3, b"<h1>Test Index</h1>")
+
+    def test_fd_cache_lru_eviction(self) -> None:
+        """
+        Проверяет вытеснение старых дескрипторов из FD-кэша по алгоритму LRU
+        """
+        large_content: bytes = b"B" * (2 * 1024 * 1024)
+        for i in range(3):
+            path: str = os.path.join(self.test_dir, f"large_{i}.bin")
+            with open(path, "wb") as f:
+                f.write(large_content)
+
+        with patch("os.open", side_effect=[10, 11, 12]), patch("os.close") as mock_close, patch("os.pread", return_value=b""):
+            gen0: Generator[bytes, None, None]
+            gen0, _, _ = self.fm.get_file("/large_0.bin", self.test_dir)
+            next(gen0, None)
+
+            gen1: Generator[bytes, None, None]
+            gen1, _, _ = self.fm.get_file("/large_1.bin", self.test_dir)
+            next(gen1, None)
+
+            gen2: Generator[bytes, None, None]
+            gen2, _, _ = self.fm.get_file("/large_2.bin", self.test_dir)
+            next(gen2, None)
+
+            mock_close.assert_called_once_with(10)
+
+    def test_fd_cache_invalidation_on_mtime_change(self) -> None:
+        """
+        Проверяет закрытие и инвалидацию старого дескриптора при изменении файла
+        """
+        large_path: str = os.path.join(self.test_dir, "large_mtime.bin")
+        large_content: bytes = b"C" * (2 * 1024 * 1024)
+        with open(large_path, "wb") as f:
+            f.write(large_content)
+
+        with patch("os.open", return_value=20), patch("os.close") as mock_close, patch("os.pread", return_value=b""):
+            gen1: Generator[bytes, None, None]
+            gen1, _, _ = self.fm.get_file("/large_mtime.bin", self.test_dir)
+            next(gen1, None)
+
+            os.utime(large_path, (os.path.getatime(large_path), os.path.getmtime(large_path) + 10.0))
+
+            gen2: Generator[bytes, None, None]
+            gen2, _, _ = self.fm.get_file("/large_mtime.bin", self.test_dir)
+            next(gen2, None)
+
+            mock_close.assert_called_once_with(20)
+
+    def test_autoindex_permission_error(self) -> None:
+        """
+        Проверяет генерацию PermissionError при отсутствии прав на листинг папки
+        """
+        with patch("os.listdir", side_effect=PermissionError("No permission")):
+            with self.assertRaises(PermissionError):
+                self.fm.get_file("/empty_folder", self.test_dir)
 
 
 if __name__ == "__main__":
